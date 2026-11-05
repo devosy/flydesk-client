@@ -5,7 +5,10 @@
 #include <windows.h>
 
 #include <algorithm>
+#include <cctype>
 #include <iostream>
+#include <string>
+#include <vector>
 
 #include "win32_desktop.h"
 #include "flutter_window.h"
@@ -20,6 +23,43 @@ typedef int (*FUNC_RUSTDESK_IS_DISABLE_INSTALLATION)();
 const std::vector<std::string> parameters_white_list = {"--install", "--cm"};
 
 const wchar_t* getWindowClassName();
+
+// FlyDesk: session link (`<scheme>://session/<token>`) for the token carried by the launcher's
+// file name (`FlyDesk-s_<token>.exe`, passed by the portable launcher in RUSTDESK_APPNAME).
+// Empty when the launcher name carries no token. Same rule as flydeskTokenFromName() in
+// flutter/lib/common/flydesk.dart: exactly 32 hexadecimal characters after "-s_".
+static std::string FlydeskSessionLinkFromLauncher(const std::wstring& app_name) {
+  char name[1024] = {0};
+  DWORD len = ::GetEnvironmentVariableA("RUSTDESK_APPNAME", name, sizeof(name));
+  if (len == 0 || len >= sizeof(name)) {
+    return "";
+  }
+  const std::string file(name, len);
+  const std::string marker = "-s_";
+  for (size_t pos = file.find(marker); pos != std::string::npos;
+       pos = file.find(marker, pos + 1)) {
+    const size_t start = pos + marker.size();
+    size_t end = start;
+    while (end < file.size() && ::isxdigit(static_cast<unsigned char>(file[end]))) {
+      end++;
+    }
+    if (end - start != 32) {
+      continue;
+    }
+    std::string link;
+    for (wchar_t c : app_name) {
+      if (c < 128) {
+        link += static_cast<char>(::tolower(static_cast<int>(c)));
+      }
+    }
+    link += "://session/";
+    for (size_t i = start; i < end; i++) {
+      link += static_cast<char>(::tolower(static_cast<unsigned char>(file[i])));
+    }
+    return link;
+  }
+  return "";
+}
 
 int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
                       _In_ wchar_t *command_line, _In_ int show_command)
@@ -119,6 +159,16 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
         // Dispatch command line arguments
         DispatchToUniLinksDesktop(hwnd);
       } else {
+        // FlyDesk: a session download started while the app is already running. Hand its
+        // token to the running app the way a session link is delivered (uni_links_desktop).
+        const std::string session_link = FlydeskSessionLinkFromLauncher(app_name);
+        if (!session_link.empty()) {
+          COPYDATASTRUCT cds = {0};
+          cds.dwData = UNI_LINKS_DESKTOP_MSG_ID;
+          cds.cbData = static_cast<DWORD>(session_link.size() + 1);
+          cds.lpData = (PVOID)session_link.c_str();
+          ::SendMessage(hwnd, WM_COPYDATA, 0, (LPARAM)&cds);
+        }
         // Not called with arguments, or just open the app shortcut on desktop.
         // So we just show the main window instead.
         ::ShowWindow(hwnd, SW_NORMAL);
