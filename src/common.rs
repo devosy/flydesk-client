@@ -2493,6 +2493,7 @@ pub fn rustdesk_interval(i: Interval) -> ThrottledInterval {
 }
 
 pub fn load_custom_client() {
+    apply_flydesk_builtin();
     #[cfg(debug_assertions)]
     if let Ok(data) = std::fs::read_to_string("./custom.txt") {
         read_custom_client(data.trim());
@@ -2591,6 +2592,7 @@ pub fn get_dst_align_rgba() -> usize {
 }
 
 pub fn read_custom_client(config: &str) {
+    apply_flydesk_builtin();
     let Ok(data) = decode64(config) else {
         log::error!("Failed to decode custom client config");
         return;
@@ -2604,13 +2606,54 @@ pub fn read_custom_client(config: &str) {
         log::error!("Failed to dec custom client config");
         return;
     };
-    let Ok(mut data) =
+    let Ok(data) =
         serde_json::from_slice::<std::collections::HashMap<String, serde_json::Value>>(&data)
     else {
         log::error!("Failed to parse custom client config");
         return;
     };
+    apply_custom_client_data(data);
+}
 
+// FlyDesk: branding and server are compiled in instead of coming from a signed custom.txt.
+// FLYDESK_SERVER / FLYDESK_KEY are read at build time (set by .github/workflows/flydesk-windows.yml);
+// without them the build points at a placeholder host so it never talks to a third-party server.
+const FLYDESK_APP_NAME: &str = "FlyDesk";
+const FLYDESK_PLACEHOLDER_SERVER: &str = "flydesk.invalid";
+
+fn apply_flydesk_builtin() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        let server = option_env!("FLYDESK_SERVER").unwrap_or("").trim();
+        let server = if server.is_empty() {
+            FLYDESK_PLACEHOLDER_SERVER
+        } else {
+            server
+        };
+        let key = option_env!("FLYDESK_KEY").unwrap_or("").trim();
+        let mut overrides = Map::new();
+        overrides.insert(
+            "custom-rendezvous-server".to_owned(),
+            Value::String(server.to_owned()),
+        );
+        if !key.is_empty() {
+            overrides.insert("key".to_owned(), Value::String(key.to_owned()));
+        }
+        overrides.insert(
+            "hide-powered-by-me".to_owned(),
+            Value::String("Y".to_owned()),
+        );
+        let mut data = HashMap::new();
+        data.insert(
+            "app-name".to_owned(),
+            Value::String(FLYDESK_APP_NAME.to_owned()),
+        );
+        data.insert("override-settings".to_owned(), Value::Object(overrides));
+        apply_custom_client_data(data);
+    });
+}
+
+fn apply_custom_client_data(mut data: HashMap<String, serde_json::Value>) {
     if let Some(app_name) = data.remove("app-name") {
         if let Some(app_name) = app_name.as_str() {
             *config::APP_NAME.write().unwrap() = app_name.to_owned();
