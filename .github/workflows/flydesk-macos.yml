@@ -23,6 +23,7 @@ env:
   APP_NAME: "FlyDesk"
   FLYDESK_SERVER: "${{ vars.FLYDESK_SERVER }}"
   FLYDESK_KEY: "${{ vars.FLYDESK_KEY }}"
+  FLYDESK_API: "${{ vars.FLYDESK_API }}"
 
 jobs:
   generate-bridge:

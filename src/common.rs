@@ -2616,7 +2616,7 @@ pub fn read_custom_client(config: &str) {
 }
 
 // FlyDesk: branding and server are compiled in instead of coming from a signed custom.txt.
-// FLYDESK_SERVER / FLYDESK_KEY are read at build time (set by .github/workflows/flydesk-windows.yml);
+// FLYDESK_SERVER / FLYDESK_KEY / FLYDESK_API are read at build time (set by the flydesk-*.yml workflows);
 // without them the build points at a placeholder host so it never talks to a third-party server.
 const FLYDESK_APP_NAME: &str = "FlyDesk";
 const FLYDESK_PLACEHOLDER_SERVER: &str = "flydesk.invalid";
@@ -2643,6 +2643,13 @@ fn apply_flydesk_builtin() {
             "hide-powered-by-me".to_owned(),
             Value::String("Y".to_owned()),
         );
+        // An incoming session is accepted by a click in the app; no password is ever asked.
+        overrides.insert("approve-mode".to_owned(), Value::String("click".to_owned()));
+        // Base URL of the CRM that opens support sessions (read by flutter/lib/common/flydesk.dart).
+        let api = option_env!("FLYDESK_API").unwrap_or("").trim();
+        if !api.is_empty() {
+            overrides.insert("flydesk-api".to_owned(), Value::String(api.to_owned()));
+        }
         let mut data = HashMap::new();
         data.insert(
             "app-name".to_owned(),

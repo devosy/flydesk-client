@@ -825,5 +825,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Renew trust", "Renouveler la confiance"),
         ("install-directory-not-empty-tip", "Le dossier sélectionné n’est pas vide. L’installation peut supprimer des données existantes. Envisagez de choisir un autre dossier."),
         ("Request approval", "Demander l'approbation"),
+        ("flydesk-session-ready", "Le support peut maintenant se connecter. Cliquez sur « Accepter » à l'apparition de la demande."),
+        ("flydesk-session-failed", "Cette session d'assistance n'est plus valide. Retournez dans le chat et recommencez."),
     ].iter().cloned().collect();
 }

@@ -6,7 +6,9 @@ name: FlyDesk Windows build
 #
 # Server settings are compiled in from two repository variables (Settings -> Secrets and
 # variables -> Actions -> Variables): FLYDESK_SERVER (host of the ID server) and FLYDESK_KEY
-# (its public key). Left empty, the build points at a placeholder host.
+# (its public key). Left empty, the build points at a placeholder host. FLYDESK_API is the base
+# URL of the CRM that opens support sessions (e.g. https://crm.example.com); left empty, the app
+# cannot be linked to a chat session and works by ID only.
 
 on:
   workflow_dispatch:
@@ -24,6 +26,7 @@ env:
   APP_EXE: "FlyDesk.exe"
   FLYDESK_SERVER: "${{ vars.FLYDESK_SERVER }}"
   FLYDESK_KEY: "${{ vars.FLYDESK_KEY }}"
+  FLYDESK_API: "${{ vars.FLYDESK_API }}"
 
 jobs:
   generate-bridge:

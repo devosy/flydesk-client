@@ -29,6 +29,7 @@ import 'package:window_manager/window_manager.dart';
 import 'package:window_size/window_size.dart' as window_size;
 
 import '../consts.dart';
+import 'common/flydesk.dart';
 import 'common/widgets/overlay.dart';
 import 'mobile/pages/file_manager_page.dart';
 import 'mobile/pages/remote_page.dart';
@@ -2414,6 +2415,11 @@ List<String>? urlLinkToCmdArgs(Uri uri) {
     "terminal",
     "terminal-admin",
   ];
+  // FlyDesk: <scheme>://session/<token> links this device to a support session opened from
+  // the CRM chat; it is never a device to connect to.
+  if (flydeskHandleUri(uri)) {
+    return null;
+  }
   if (uri.authority.isEmpty &&
       uri.path.split('').every((char) => char == '/')) {
     return [];
