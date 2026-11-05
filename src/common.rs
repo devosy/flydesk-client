@@ -2650,11 +2650,16 @@ fn apply_flydesk_builtin() {
         if !api.is_empty() {
             overrides.insert("flydesk-api".to_owned(), Value::String(api.to_owned()));
         }
+        // French unless the user picks another language in the settings ("Default" there
+        // means the language of the computer).
+        let mut defaults = Map::new();
+        defaults.insert("lang".to_owned(), Value::String("fr".to_owned()));
         let mut data = HashMap::new();
         data.insert(
             "app-name".to_owned(),
             Value::String(FLYDESK_APP_NAME.to_owned()),
         );
+        data.insert("default-settings".to_owned(), Value::Object(defaults));
         data.insert("override-settings".to_owned(), Value::Object(overrides));
         apply_custom_client_data(data);
     });
