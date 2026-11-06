@@ -2601,7 +2601,10 @@ impl AudioHandler {
                 #[cfg(feature = "echo-cancel")]
                 if crate::echo_cancel::is_active() {
                     far_end.clear();
-                    far_end.extend(data.iter().map(|s| f32::from_sample_(*s)));
+                    far_end.extend(
+                        data.iter()
+                            .map(|s| <f32 as cpal::FromSample<T>>::from_sample_(*s)),
+                    );
                     crate::echo_cancel::push_render(&far_end);
                 }
             },

@@ -677,6 +677,8 @@ pub async fn start_server(is_server: bool, no_server: bool) {
 
     if is_server {
         crate::common::set_server_running(true);
+        // FlyDesk: no voice call survives a restart of this process (the flag is persisted).
+        crate::flydesk_set_voice_active(false);
         std::thread::spawn(move || {
             if let Err(err) = crate::ipc::start("") {
                 log::error!("Failed to start ipc: {}", err);

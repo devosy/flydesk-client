@@ -491,14 +491,22 @@ mod cpal_impl {
         } else {
             48000
         };
-        let ch = if config.channels() > 1 { Stereo } else { Mono };
+        // FlyDesk voice call: the microphone is sent mono (the pipeline rechannels a stereo input).
+        let voice = crate::flydesk_build() && get_voice_call_input_device().is_some();
+        let ch = if voice {
+            Mono
+        } else if config.channels() > 1 {
+            Stereo
+        } else {
+            Mono
+        };
         let max_channels = config.channels().max(ch as u16);
         let (_, max_packet_samples) = capture_packet_layout(sample_rate, max_channels)?;
         let encoder_config = audio_capture_queue::CaptureEncoderConfig {
             sample_rate,
             encode_channel: ch,
             max_packet_samples,
-            voice: crate::flydesk_build() && get_voice_call_input_device().is_some(),
+            voice,
         };
         let (sender, encoder_worker) =
             audio_capture_queue::start_capture_encoder(encoder_config, sp)?;
