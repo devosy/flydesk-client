@@ -2,8 +2,18 @@ name: FlyDesk macOS build
 
 # Manual build of the FlyDesk macOS (Apple Silicon) client. The build steps are the aarch64 half
 # of `build-for-macOS` in flutter-build.yml; keep the tool versions below in step with that file
-# when merging upstream. The app is ad-hoc signed (no Apple developer certificate): it runs, but
-# macOS asks the user to allow it on first launch.
+# when merging upstream.
+#
+# Signing. Without the secrets below the app is ad-hoc signed: it runs, but macOS refuses to open
+# a downloaded copy ("Apple could not verify ..."). With them, the app and the dmg are signed with
+# the Developer ID certificate (hardened runtime), the dmg is notarized by Apple and the ticket is
+# stapled to it, so macOS opens it like any identified app. Repository secrets:
+#   MACOS_P12_BASE64        the "Developer ID Application" certificate with its private key,
+#                           exported as .p12, base64 encoded
+#   MACOS_P12_PASSWORD      the password of that .p12
+#   MACOS_NOTARY_KEY_BASE64 an App Store Connect API key (.p8, team key), base64 encoded
+#   MACOS_NOTARY_KEY_ID     its key ID
+#   MACOS_NOTARY_ISSUER_ID  its issuer ID
 #
 # Server settings come from the repository variables FLYDESK_SERVER and FLYDESK_KEY
 # (see flydesk-windows.yml).
@@ -37,6 +47,9 @@ jobs:
       TARGET: aarch64-apple-darwin
       VCPKG_TRIPLET: arm64-osx
       APP_PATH: ./flutter/build/macos/Build/Products/Release/FlyDesk.app
+      # 'true' when the certificate secret is set; otherwise the ad-hoc signature is kept. Only
+      # this flag is visible to every step: the certificate itself is given to the signing step.
+      SIGN_WITH_DEVELOPER_ID: "${{ secrets.MACOS_P12_BASE64 != '' }}"
     steps:
       - name: Export GitHub Actions cache environment variables
         uses: actions/github-script@d7906e4ad0b1822421a7e6a35d5ca353c962f410 # v6
@@ -142,12 +155,45 @@ jobs:
           ls -la "$APP_PATH/Contents/MacOS"
 
       - name: Ad-hoc sign the app
+        if: env.SIGN_WITH_DEVELOPER_ID != 'true'
         # build.py adds the service binary after Xcode signed the bundle, so the bundle is signed
         # again. Ad-hoc identity, no hardened runtime (it would refuse the ad-hoc signed libraries).
         run: |
           codesign --force --deep --sign - --entitlements ./flutter/macos/Runner/Release.entitlements "$APP_PATH"
           codesign --verify --deep --strict --verbose=2 "$APP_PATH"
           codesign -dv "$APP_PATH" 2>&1 | grep -E "Identifier|Signature|TeamIdentifier"
+
+      - name: Sign the app with the Developer ID certificate
+        if: env.SIGN_WITH_DEVELOPER_ID == 'true'
+        # The certificate goes into a keychain of its own, created for this run (GitHub's recipe
+        # for Apple certificates on macOS runners). Hardened runtime and a secure timestamp are
+        # both required by notarization.
+        env:
+          MACOS_P12_BASE64: ${{ secrets.MACOS_P12_BASE64 }}
+          MACOS_P12_PASSWORD: ${{ secrets.MACOS_P12_PASSWORD }}
+        run: |
+          SIGN_KEYCHAIN="$RUNNER_TEMP/flydesk-signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -hex 24)"
+          P12_FILE="$RUNNER_TEMP/developer-id.p12"
+          echo "$MACOS_P12_BASE64" | base64 --decode > "$P12_FILE"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$SIGN_KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$SIGN_KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$SIGN_KEYCHAIN"
+          security import "$P12_FILE" -P "$MACOS_P12_PASSWORD" -A -t cert -f pkcs12 -k "$SIGN_KEYCHAIN"
+          rm -f "$P12_FILE"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$SIGN_KEYCHAIN" > /dev/null
+          security list-keychains -d user -s "$SIGN_KEYCHAIN"
+          SIGN_IDENTITY="$(security find-identity -v -p codesigning "$SIGN_KEYCHAIN" | sed -n 's/.*"\(Developer ID Application: [^"]*\)".*/\1/p' | head -1)"
+          if [ -z "$SIGN_IDENTITY" ]; then
+            echo "::error::MACOS_P12_BASE64 holds no 'Developer ID Application' certificate with its private key"
+            exit 1
+          fi
+          echo "Signing as: $SIGN_IDENTITY"
+          echo "SIGN_KEYCHAIN=$SIGN_KEYCHAIN" >> "$GITHUB_ENV"
+          echo "SIGN_IDENTITY=$SIGN_IDENTITY" >> "$GITHUB_ENV"
+          codesign --force --deep --options runtime --timestamp --keychain "$SIGN_KEYCHAIN" --sign "$SIGN_IDENTITY" --entitlements ./flutter/macos/Runner/Release.entitlements "$APP_PATH"
+          codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+          codesign -dv "$APP_PATH" 2>&1 | grep -E "Identifier|Authority|TeamIdentifier|Timestamp|flags"
 
       - name: Smoke test (the built app starts and reports its version)
         run: |
@@ -165,6 +211,45 @@ jobs:
           sed -i -e 's/MAXIMUM_UNMOUNTING_ATTEMPTS=3/MAXIMUM_UNMOUNTING_ATTEMPTS=7/' "$CREATE_DMG"
           create-dmg --icon "FlyDesk.app" 200 190 --hide-extension "FlyDesk.app" --window-size 800 400 --app-drop-link 600 185 "FlyDesk-${VERSION}-aarch64.dmg" "$APP_PATH"
           shasum -a 256 FlyDesk-*.dmg
+
+      - name: Sign, notarize and staple the dmg
+        if: env.SIGN_WITH_DEVELOPER_ID == 'true'
+        # Apple checks the dmg and everything in it; the ticket is then stapled to the dmg so that
+        # the check also passes on a Mac that is offline. The sha256 printed here is the one of the
+        # file that is uploaded (stapling changes the dmg).
+        env:
+          MACOS_NOTARY_KEY_BASE64: ${{ secrets.MACOS_NOTARY_KEY_BASE64 }}
+          MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          MACOS_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+        run: |
+          DMG="FlyDesk-${VERSION}-aarch64.dmg"
+          if [ -z "$MACOS_NOTARY_KEY_BASE64" ] || [ -z "$MACOS_NOTARY_KEY_ID" ] || [ -z "$MACOS_NOTARY_ISSUER_ID" ]; then
+            echo "::error::MACOS_NOTARY_KEY_BASE64, MACOS_NOTARY_KEY_ID and MACOS_NOTARY_ISSUER_ID are required with MACOS_P12_BASE64"
+            exit 1
+          fi
+          codesign --force --timestamp --keychain "$SIGN_KEYCHAIN" --sign "$SIGN_IDENTITY" "$DMG"
+          NOTARY_KEY="$RUNNER_TEMP/notary-key.p8"
+          trap 'rm -f "$NOTARY_KEY"' EXIT
+          echo "$MACOS_NOTARY_KEY_BASE64" | base64 --decode > "$NOTARY_KEY"
+          xcrun notarytool submit "$DMG" --key "$NOTARY_KEY" --key-id "$MACOS_NOTARY_KEY_ID" --issuer "$MACOS_NOTARY_ISSUER_ID" --wait --timeout 45m --output-format json > notary-result.json || true
+          cat notary-result.json
+          NOTARY_STATUS="$(plutil -extract status raw -o - notary-result.json || true)"
+          NOTARY_ID="$(plutil -extract id raw -o - notary-result.json || true)"
+          if [ "$NOTARY_STATUS" != "Accepted" ]; then
+            if [ -n "$NOTARY_ID" ]; then
+              xcrun notarytool log "$NOTARY_ID" --key "$NOTARY_KEY" --key-id "$MACOS_NOTARY_KEY_ID" --issuer "$MACOS_NOTARY_ISSUER_ID" || true
+            fi
+            echo "::error::Apple did not accept the dmg (status '$NOTARY_STATUS')"
+            exit 1
+          fi
+          xcrun stapler staple "$DMG"
+          xcrun stapler validate "$DMG"
+          spctl --assess --type open --context context:primary-signature --verbose=2 "$DMG"
+          shasum -a 256 "$DMG"
+
+      - name: Remove the signing keychain
+        if: always() && env.SIGN_KEYCHAIN != ''
+        run: security delete-keychain "$SIGN_KEYCHAIN" || true
 
       - name: Upload dmg
         # the dmg, not the directory: uploading the bundle directly destroys its link structure
