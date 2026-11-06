@@ -3,7 +3,10 @@ use hbb_common::{
     anyhow::{bail, Context, Result},
     log,
 };
-use magnum_opus::{Application::LowDelay, Channels, Encoder};
+use magnum_opus::{
+    Application::{LowDelay, Voip},
+    Bitrate, Channels, Encoder,
+};
 use std::{
     collections::VecDeque,
     sync::{
@@ -86,6 +89,23 @@ pub(super) struct CaptureEncoderConfig {
     pub(super) sample_rate: u32,
     pub(super) encode_channel: Channels,
     pub(super) max_packet_samples: usize,
+    /// FlyDesk: the capture is the voice-call microphone; the encoder is tuned
+    /// for speech over a lossy relay (Voip, 32 kbps, in-band FEC, 10 % loss).
+    pub(super) voice: bool,
+}
+
+const VOICE_BITRATE_BPS: i32 = 32_000;
+const VOICE_PACKET_LOSS_PERC: i32 = 10;
+
+fn new_capture_encoder(config: &CaptureEncoderConfig) -> Result<Encoder> {
+    if !config.voice {
+        return Ok(Encoder::new(config.sample_rate, config.encode_channel, LowDelay)?);
+    }
+    let mut encoder = Encoder::new(config.sample_rate, config.encode_channel, Voip)?;
+    encoder.set_bitrate(Bitrate::Bits(VOICE_BITRATE_BPS))?;
+    encoder.set_inband_fec(true)?;
+    encoder.set_packet_loss_perc(VOICE_PACKET_LOSS_PERC)?;
+    Ok(encoder)
 }
 
 pub(super) struct CaptureEncoderWorker {
@@ -269,7 +289,7 @@ pub(super) fn start_capture_encoder(
     service: GenericService,
 ) -> Result<(CapturePcmSender, CaptureEncoderWorker)> {
     let (sender, receiver) = new_pcm_handoff(CAPTURE_PCM_QUEUE_PACKETS, config.max_packet_samples)?;
-    let encoder = Encoder::new(config.sample_rate, config.encode_channel, LowDelay)?;
+    let encoder = new_capture_encoder(&config)?;
     let stop = Arc::new(AtomicBool::new(false));
     let context = CaptureEncoderContext {
         receiver,

@@ -1188,6 +1188,13 @@ impl Connection {
                         conn.keyboard = false;
                         conn.send_permission(Permission::Keyboard, false).await;
                     }
+                    // FlyDesk: the customer switched the voice call off (chat card, or the
+                    // app's window): the running call is ended and the agent is told.
+                    if conn.voice_calling && crate::flydesk_build() && !crate::flydesk_voice_allowed() {
+                        conn.close_voice_call().await;
+                        let msg = new_voice_call_request(false);
+                        conn.send(msg).await;
+                    }
                     if let Some((instant, minute)) = conn.auto_disconnect_timer.as_ref() {
                         if instant.elapsed().as_secs() > minute * 60 {
                             conn.send_close_reason_no_retry("Connection failed due to inactivity").await;
@@ -4114,7 +4121,8 @@ impl Connection {
                     _ => {}
                 },
                 Some(message::Union::AudioFrame(frame)) => {
-                    if !self.disable_audio {
+                    // FlyDesk: speaker switched off in the app's window — the agent's voice is dropped.
+                    if !self.disable_audio && !crate::flydesk_speaker_off() {
                         if let Some(sender) = &self.audio_sender {
                             allow_err!(sender.send(MediaData::AudioFrame(Box::new(frame))));
                         } else {
@@ -4130,8 +4138,16 @@ impl Connection {
                             NonZeroI64::new(request.req_timestamp)
                                 .unwrap_or(NonZeroI64::new(get_time()).unwrap()),
                         );
-                        // Notify the connection manager.
-                        self.send_to_cm(Data::VoiceCallIncoming);
+                        // FlyDesk: the connection window never shows; the customer accepted the
+                        // agent in the CRM chat and decides about voice there (and with the
+                        // Mute / Speaker buttons of the app's window). Answered here at once.
+                        if crate::flydesk_build() {
+                            let accept = crate::flydesk_session_live() && crate::flydesk_voice_allowed();
+                            self.handle_voice_call(accept).await;
+                        } else {
+                            // Notify the connection manager.
+                            self.send_to_cm(Data::VoiceCallIncoming);
+                        }
                     } else {
                         self.close_voice_call().await;
                     }
@@ -4924,6 +4940,7 @@ impl Connection {
             }
             self.send(msg).await;
             self.voice_calling = accepted;
+            crate::flydesk_set_voice_active(accepted);
             if self.is_authed_view_camera_conn() {
                 if let Some(s) = self.server.upgrade() {
                     s.write().unwrap().subscribe(
@@ -4943,6 +4960,7 @@ impl Connection {
         // Notify the connection manager that the voice call has been closed.
         self.send_to_cm(Data::CloseVoiceCall("".to_owned()));
         self.voice_calling = false;
+        crate::flydesk_set_voice_active(false);
         if self.is_authed_view_camera_conn() {
             if let Some(s) = self.server.upgrade() {
                 s.write()
@@ -5346,6 +5364,11 @@ impl Connection {
         // We can add a (Vec<conn_id>, input device) to avoid this.
         // But it's not necessary now and we have to consider two audio services(client, server).
         crate::audio_service::set_voice_call_input_device(None, true);
+        // FlyDesk: the agent left during the call — the app's window stops showing it.
+        if self.voice_calling {
+            self.voice_calling = false;
+            crate::flydesk_set_voice_active(false);
+        }
         log::info!("#{} Connection closed: {}", self.inner.id(), reason);
         if lock
             && self.lock_after_session_end

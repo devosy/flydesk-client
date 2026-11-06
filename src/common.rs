@@ -2645,6 +2645,44 @@ pub fn flydesk_build() -> bool {
     !get_builtin_option(FLYDESK_API_OPTION).is_empty()
 }
 
+// fly3-rustdesk-voice: the voice call of a support session. The app's window writes the
+// customer's choices (from the CRM chat and its own buttons); the server reads them and
+// writes the call state back for the window.
+//   flydesk-voice   = N: no voice call (refused in the chat, or switched off) — the server refuses
+//                      an incoming call and ends a running one; anything else allows it.
+//   flydesk-mic     = N: microphone muted — the capture encodes silence while the call is on.
+//   flydesk-speaker = N: speaker off — the agent's audio frames are dropped.
+//   flydesk-voice-active (written by the server): Y while a voice call is on, else unset.
+pub const FLYDESK_VOICE_OPTION: &str = "flydesk-voice";
+pub const FLYDESK_MIC_OPTION: &str = "flydesk-mic";
+pub const FLYDESK_SPEAKER_OPTION: &str = "flydesk-speaker";
+pub const FLYDESK_VOICE_ACTIVE_OPTION: &str = "flydesk-voice-active";
+
+/// FlyDesk: the customer allows the voice call (a build without a CRM is not restricted).
+pub fn flydesk_voice_allowed() -> bool {
+    !flydesk_build() || Config::get_option(FLYDESK_VOICE_OPTION) != "N"
+}
+
+/// FlyDesk: the customer muted the microphone in the app's window.
+pub fn flydesk_mic_muted() -> bool {
+    flydesk_build() && Config::get_option(FLYDESK_MIC_OPTION) == "N"
+}
+
+/// FlyDesk: the customer switched the speaker off in the app's window.
+pub fn flydesk_speaker_off() -> bool {
+    flydesk_build() && Config::get_option(FLYDESK_SPEAKER_OPTION) == "N"
+}
+
+/// FlyDesk: the server records whether a voice call is on, for the app's window.
+pub fn flydesk_set_voice_active(active: bool) {
+    if flydesk_build() {
+        Config::set_option(
+            FLYDESK_VOICE_ACTIVE_OPTION.to_owned(),
+            if active { "Y" } else { "" }.to_owned(),
+        );
+    }
+}
+
 /// FlyDesk: the customer chose « view only » in the CRM chat (the app's window writes the
 /// choice to the standard `enable-keyboard` option).
 pub fn flydesk_view_only() -> bool {

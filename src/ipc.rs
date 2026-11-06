@@ -1076,11 +1076,24 @@ async fn handle(data: Data, stream: &mut Connection) {
                 let v = Config::get_options();
                 allow_err!(stream.send(&Data::Options(Some(v))).await);
             }
-            Some(value) => {
+            Some(mut value) => {
                 let _chk = CheckIfRestart::new();
                 let _nat = CheckTestNatType::new();
                 if let Some(v) = value.get("privacy-mode-impl-key") {
                     crate::privacy_mode::switch(v);
+                }
+                // FlyDesk: the voice-call state is written by this process; a window writing
+                // the options back from its (up to one second old) copy must not undo it.
+                if crate::flydesk_build() {
+                    let key = crate::FLYDESK_VOICE_ACTIVE_OPTION;
+                    match Config::get_option(key) {
+                        v if v.is_empty() => {
+                            value.remove(key);
+                        }
+                        v => {
+                            value.insert(key.to_owned(), v);
+                        }
+                    }
                 }
                 if let Err(error) = crate::trusted_devices::config::update_options(value).await {
                     allow_err!(

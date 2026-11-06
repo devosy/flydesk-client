@@ -495,6 +495,7 @@ mod cpal_impl {
             sample_rate,
             encode_channel: ch,
             max_packet_samples,
+            voice: crate::flydesk_build() && get_voice_call_input_device().is_some(),
         };
         let (sender, encoder_worker) =
             audio_capture_queue::start_capture_encoder(encoder_config, sp)?;
@@ -659,6 +660,15 @@ impl AudioEncoder {
 }
 
 fn send_f32(data: &[f32], encoder: &mut AudioEncoder, sp: &GenericService) {
+    // FlyDesk: a muted microphone keeps the voice stream alive but sends silence
+    // (the zero gate stops the packets after MAX_AUDIO_ZERO_COUNT silent ones).
+    let silence;
+    let data = if crate::flydesk_mic_muted() && get_voice_call_input_device().is_some() {
+        silence = vec![0f32; data.len()];
+        silence.as_slice()
+    } else {
+        data
+    };
     if !encoder.should_encode(data) {
         return;
     }

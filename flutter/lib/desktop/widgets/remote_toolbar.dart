@@ -847,13 +847,14 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
     if (widget.ffi.connType == ConnType.defaultConn) {
       toolbarItems.add(_KeyboardMenu(id: widget.id, ffi: widget.ffi));
     }
-    // FlyDesk: the in-session chat and voice call end in the remote computer's connection
-    // window, which never shows there. The CRM chat is the channel.
+    // FlyDesk: the in-session chat ends in the remote computer's connection window, which
+    // never shows there; the CRM chat is the channel. The voice call stays: the customer's
+    // app accepts it by itself (the link starts it, this menu restarts or ends it).
     if (!flydeskEnabled()) {
       toolbarItems.add(_ChatMenu(id: widget.id, ffi: widget.ffi));
-      if (!isWeb) {
-        toolbarItems.add(_VoiceCallMenu(id: widget.id, ffi: widget.ffi));
-      }
+    }
+    if (!isWeb) {
+      toolbarItems.add(_VoiceCallMenu(id: widget.id, ffi: widget.ffi));
     }
     if (!isWeb) toolbarItems.add(_RecordMenu());
     toolbarItems.add(_CloseMenu(id: widget.id, ffi: widget.ffi));

@@ -111,6 +111,10 @@ class _DesktopHomePageState extends State<DesktopHomePage>
     final phase = flydeskPhase.value;
     final connected = flydeskConnected.value;
     final control = flydeskControl.value;
+    final voice = flydeskVoice.value;
+    final voiceActive = flydeskVoiceActive.value;
+    final micMuted = flydeskMicMuted.value;
+    final speakerOn = flydeskSpeakerOn.value;
     final active = phase == FlydeskPhase.active;
     String title;
     String? detail;
@@ -165,6 +169,57 @@ class _DesktopHomePageState extends State<DesktopHomePage>
               textAlign: TextAlign.center,
               style: textTheme.bodySmall,
             ),
+          ],
+          if (active && connected) ...[
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  voiceActive
+                      ? Icons.phone_in_talk
+                      : (voice ? Icons.phone : Icons.phone_disabled),
+                  color: voiceActive ? Colors.green : Colors.grey,
+                  size: 18,
+                ),
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                    translate(voice
+                        ? (voiceActive
+                            ? 'flydesk-panel-voice'
+                            : 'flydesk-panel-voice-idle')
+                        : 'flydesk-panel-voice-off'),
+                    style: textTheme.bodySmall,
+                  ),
+                ),
+              ],
+            ),
+            if (voiceActive) ...[
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  OutlinedButton.icon(
+                    icon: Icon(micMuted ? Icons.mic_off : Icons.mic,
+                        size: 18, color: micMuted ? Colors.redAccent : null),
+                    label: Text(translate(micMuted
+                        ? 'flydesk-panel-unmute'
+                        : 'flydesk-panel-mute')),
+                    onPressed: () => flydeskSetMicMuted(!micMuted),
+                  ),
+                  const SizedBox(width: 8),
+                  OutlinedButton.icon(
+                    icon: Icon(speakerOn ? Icons.volume_up : Icons.volume_off,
+                        size: 18, color: speakerOn ? null : Colors.redAccent),
+                    label: Text(translate(speakerOn
+                        ? 'flydesk-panel-speaker-off'
+                        : 'flydesk-panel-speaker-on')),
+                    onPressed: () => flydeskSetSpeakerOn(!speakerOn),
+                  ),
+                ],
+              ),
+            ],
           ],
           if (active || phase == FlydeskPhase.starting) ...[
             const SizedBox(height: 18),

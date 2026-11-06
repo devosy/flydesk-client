@@ -836,5 +836,12 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("flydesk-panel-chat-tip", "يمكنك السماح بالتحكم أو سحبه من المحادثة. إغلاق هذه النافذة يوقف الجلسة."),
         ("flydesk-panel-ended", "انتهت الجلسة."),
         ("flydesk-panel-stop", "إيقاف الجلسة"),
+        ("flydesk-panel-voice", "مكالمة صوتية جارية مع الدعم."),
+        ("flydesk-panel-voice-off", "المكالمة الصوتية معطّلة (المحادثة)."),
+        ("flydesk-panel-voice-idle", "لا توجد مكالمة صوتية."),
+        ("flydesk-panel-mute", "كتم الميكروفون"),
+        ("flydesk-panel-unmute", "تشغيل الميكروفون"),
+        ("flydesk-panel-speaker-off", "كتم الصوت"),
+        ("flydesk-panel-speaker-on", "تشغيل الصوت"),
     ].iter().cloned().collect();
 }

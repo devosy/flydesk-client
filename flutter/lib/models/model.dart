@@ -39,6 +39,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:vector_math/vector_math.dart' show Vector2;
 
 import '../common.dart';
+import '../common/flydesk.dart';
 import '../utils/image.dart' as img;
 import '../common/widgets/dialog.dart';
 import 'input_model.dart';
@@ -1499,6 +1500,11 @@ class FfiModel with ChangeNotifier {
 
     if (!isCache) {
       tryUseAllMyDisplaysForTheRemoteSession(peerId);
+      // FlyDesk: the chat's connect link asked for the voice call; the customer's app accepts
+      // it by itself.
+      if (flydeskTakeVoiceCall(peerId)) {
+        bind.sessionRequestVoiceCall(sessionId: sessionId);
+      }
     }
   }
 

@@ -42,6 +42,17 @@ const int _kFlydeskReadyWaitAttempts = 4;
 
 /// Engine option: time (ms since the epoch) until which incoming connections are allowed.
 const String kFlydeskLiveOption = 'flydesk-live';
+/// Engine options of the voice call. The engine accepts the agent's call by itself while the
+/// session is live and [kFlydeskVoiceOption] is not « N » (the customer's choice in the chat
+/// card); [kFlydeskMicOption] = N sends silence, [kFlydeskSpeakerOption] = N
+/// drops the agent's voice; [kFlydeskVoiceActiveOption] is written by the engine (Y while a
+/// call runs) and only read here.
+const String kFlydeskVoiceOption = 'flydesk-voice';
+const String kFlydeskMicOption = 'flydesk-mic';
+const String kFlydeskSpeakerOption = 'flydesk-speaker';
+const String kFlydeskVoiceActiveOption = 'flydesk-voice-active';
+/// The CRM is told about a change of the call state (started, ended) through this path.
+const String _kFlydeskVoicePath = '/api/public/flydesk/voice';
 // How long one write of [kFlydeskLiveOption] keeps the engine open, and how often it is
 // written again.
 const int _kFlydeskLiveMs = 30 * 1000;
@@ -83,6 +94,42 @@ final RxBool flydeskControl = true.obs;
 
 /// A support agent is connected to this computer right now.
 final RxBool flydeskConnected = false.obs;
+
+/// The customer allows the voice call (their choice in the chat card).
+final RxBool flydeskVoice = true.obs;
+
+/// The agent's voice call is running right now (read from the engine).
+final RxBool flydeskVoiceActive = false.obs;
+
+/// The microphone is muted (the call goes on, the agent hears silence).
+final RxBool flydeskMicMuted = false.obs;
+
+/// The agent's voice is played on this computer.
+final RxBool flydeskSpeakerOn = true.obs;
+
+/// Agent side: the session link asked for the voice call (`--voice`). The remote window of
+/// that peer runs in another isolate of this process, so the wish goes through a local option
+/// of the engine (process-wide); the remote window takes it as soon as the peer's screen is
+/// open and requests the call (models/model.dart).
+const String kFlydeskVoicePeerOption = 'flydesk-voice-peer';
+
+void flydeskVoiceCallFor(String peerId) {
+  bind.mainSetLocalOption(key: kFlydeskVoicePeerOption, value: peerId);
+}
+
+/// True once for the remote window of [peerId] after [flydeskVoiceCallFor].
+bool flydeskTakeVoiceCall(String peerId) {
+  if (!flydeskEnabled()) return false;
+  if (bind.mainGetLocalOption(key: kFlydeskVoicePeerOption) != peerId) {
+    return false;
+  }
+  bind.mainSetLocalOption(key: kFlydeskVoicePeerOption, value: '');
+  return true;
+}
+
+// The call state last told to the CRM for the active session (null: nothing told yet).
+bool? _flydeskVoiceTold;
+bool _flydeskTellingVoice = false;
 
 String? _flydeskPendingToken;
 bool _flydeskAttaching = false;
@@ -337,6 +384,11 @@ Future<void> _flydeskStarted(String token) async {
   _flydeskStateKnown = false;
   _flydeskStateOkAt = _flydeskNow();
   _flydeskLiveWrittenAt = 0;
+  // A new session starts without a call in the CRM.
+  _flydeskVoiceTold = false;
+  flydeskVoiceActive.value = false;
+  flydeskMicMuted.value = false;
+  flydeskSpeakerOn.value = true;
   if (previous != null && previous != token) {
     // One session at a time. The previous one ends here and in the CRM: its open connections
     // are cut and the password its agent could get stops working. The new session gets the
@@ -357,6 +409,11 @@ Future<void> _flydeskFinish(FlydeskPhase phase) async {
   _flydeskStateKnown = false;
   flydeskPhase.value = phase;
   flydeskControl.value = true;
+  flydeskVoice.value = true;
+  flydeskVoiceActive.value = false;
+  flydeskMicMuted.value = false;
+  flydeskSpeakerOn.value = true;
+  _flydeskVoiceTold = null;
   await _flydeskCloseEngine();
 }
 
@@ -368,6 +425,7 @@ Future<void> _flydeskCloseEngine() async {
     if (await bind.optionSynced()) {
       await _flydeskSetLive(false);
       await _flydeskWriteControl(true);
+      await _flydeskWriteVoice(true, muted: false, speaker: true);
     } else {
       // Not possible now: done by the next tick.
       _flydeskReset = false;
@@ -390,6 +448,36 @@ Future<void> _flydeskSetLive(bool live) async {
     await bind.mainSetOption(key: kFlydeskLiveOption, value: '');
     _flydeskLiveWrittenAt = 0;
   }
+}
+
+// The customer's voice choices, written for the engine (which reads them for the call).
+Future<void> _flydeskWriteVoice(bool voice,
+    {required bool muted, required bool speaker}) async {
+  await _flydeskWriteFlag(kFlydeskVoiceOption, voice);
+  await _flydeskWriteFlag(kFlydeskMicOption, !muted);
+  await _flydeskWriteFlag(kFlydeskSpeakerOption, speaker);
+}
+
+// « N » switches a feature off; the empty value (the default) leaves it on.
+Future<void> _flydeskWriteFlag(String key, bool on) async {
+  final wanted = on ? '' : 'N';
+  if (await bind.mainGetOption(key: key) != wanted) {
+    await bind.mainSetOption(key: key, value: wanted);
+  }
+}
+
+/// Mute (or unmute) the microphone during the call.
+Future<void> flydeskSetMicMuted(bool muted) async {
+  flydeskMicMuted.value = muted;
+  if (!await bind.optionSynced()) return;
+  await _flydeskWriteFlag(kFlydeskMicOption, !muted);
+}
+
+/// Play (or stop playing) the agent's voice.
+Future<void> flydeskSetSpeakerOn(bool on) async {
+  flydeskSpeakerOn.value = on;
+  if (!await bind.optionSynced()) return;
+  await _flydeskWriteFlag(kFlydeskSpeakerOption, on);
 }
 
 // « Control » removes the restrictions, « view only » sets them.
@@ -432,6 +520,7 @@ Future<void> _flydeskTick() async {
         _flydeskReset = true;
         await _flydeskSetLive(false);
         await _flydeskWriteControl(true);
+        await _flydeskWriteVoice(true, muted: false, speaker: true);
         // A window killed during a session left its one-time password in use.
         bind.mainUpdateTemporaryPassword();
       } else if ((await bind.mainGetOption(key: kFlydeskLiveOption))
@@ -442,6 +531,9 @@ Future<void> _flydeskTick() async {
       return;
     }
     _flydeskReset = false;
+    // The call state comes from the engine (it accepts and ends the call itself).
+    flydeskVoiceActive.value = flydeskConnected.value &&
+        await bind.mainGetOption(key: kFlydeskVoiceActiveOption) == 'Y';
     if (paused) {
       // The silence was this computer's, not the CRM's: ask again first. The engine is not
       // kept open until the answer.
@@ -478,6 +570,8 @@ Future<void> _flydeskFollow(String token) async {
       if (_flydeskSession != token) return;
     }
     await _flydeskSendPassword(token);
+    if (_flydeskSession != token) return;
+    await _flydeskTellVoice(token);
   } catch (e) {
     debugPrint('flydesk: following the session failed: $e');
   } finally {
@@ -497,17 +591,22 @@ Future<void> _flydeskPollState(String token) async {
     return;
   }
   var control = true;
+  var voice = true;
   try {
     final data = (jsonDecode(resp.body) as Map<String, dynamic>)['data'];
     if (data is Map && data['control'] == false) control = false;
+    if (data is Map && data['voice'] == false) voice = false;
   } catch (e) {
     debugPrint('flydesk: unreadable state answer: $e');
     return;
   }
   _flydeskStateOkAt = _flydeskNow();
   flydeskControl.value = control;
+  flydeskVoice.value = voice;
   if (!await bind.optionSynced()) return;
   await _flydeskWriteControl(control);
+  await _flydeskWriteVoice(voice,
+      muted: flydeskMicMuted.value, speaker: flydeskSpeakerOn.value);
   // Only now may the engine be opened for this session.
   if (_flydeskSession == token) _flydeskStateKnown = true;
 }
@@ -534,6 +633,21 @@ Future<void> _flydeskSendPassword(String token) async {
     }
   } finally {
     _flydeskSendingPassword = false;
+  }
+}
+
+// The chat card shows « voice call in progress »: the CRM is told when the state changes.
+Future<void> _flydeskTellVoice(String token) async {
+  final active = flydeskVoiceActive.value;
+  if (_flydeskTellingVoice || _flydeskVoiceTold == active) return;
+  _flydeskTellingVoice = true;
+  try {
+    final status = await _flydeskPostStatus(
+        _kFlydeskVoicePath, {'token': token, 'active': active});
+    if (_flydeskSession != token) return;
+    if (status == 200) _flydeskVoiceTold = active;
+  } finally {
+    _flydeskTellingVoice = false;
   }
 }
 

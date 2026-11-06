@@ -2288,6 +2288,7 @@ bool handleUriLink({List<String>? cmdArgs, Uri? uri, String? uriString}) {
   String? switchUuid;
   bool? forceRelay;
   var loginMethod = '';
+  var voice = false;
   for (int i = 0; i < args.length; i++) {
     switch (args[i]) {
       case '--connect':
@@ -2295,6 +2296,10 @@ bool handleUriLink({List<String>? cmdArgs, Uri? uri, String? uriString}) {
         type = UriLinkType.remoteDesktop;
         id = args[i + 1];
         i++;
+        break;
+      case '--voice':
+        // FlyDesk: the chat's connect link asks for the voice call.
+        voice = true;
         break;
       case '--file-transfer':
         type = UriLinkType.fileTransfer;
@@ -2349,6 +2354,7 @@ bool handleUriLink({List<String>? cmdArgs, Uri? uri, String? uriString}) {
     password = null;
   }
   if (type != null && id != null) {
+    if (voice && type == UriLinkType.remoteDesktop) flydeskVoiceCallFor(id);
     switch (type) {
       case UriLinkType.remoteDesktop:
         Future.delayed(Duration.zero, () {
@@ -2543,6 +2549,7 @@ List<String>? urlLinkToCmdArgs(Uri uri) {
     String? password = param["password"];
     if (password != null) args.addAll(['--password', password]);
     if (requestApproval) args.add('--request-approval');
+    if (param["voice"] == '1') args.add('--voice');
     String? switch_uuid = param["switch_uuid"];
     if (switch_uuid != null) args.addAll(['--switch_uuid', switch_uuid]);
     if (param["relay"] != null) args.add("--relay");
