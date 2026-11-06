@@ -107,7 +107,12 @@ impl CaptureStatsReporter {
 }
 
 pub(super) fn run_capture_encoder(context: CaptureEncoderContext, config: CaptureEncoderConfig) {
-    let mut encoder = AudioEncoder::new(context.encoder);
+    let mut encoder = AudioEncoder::new(
+        context.encoder,
+        config.sample_rate,
+        config.encode_channel as u16,
+        config.voice,
+    );
     let mut state = CaptureEncoderState::new(config.sample_rate, config.encode_channel);
     loop {
         while let Some(packet) = state.next_packet(&context.receiver) {

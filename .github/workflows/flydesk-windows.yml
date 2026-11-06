@@ -27,7 +27,7 @@ permissions:
   contents: read
 
 env:
-  SCITER_RUST_VERSION: "1.75"
+  SCITER_RUST_VERSION: "1.91"  # fly3-rustdesk-voice: the echo-cancel feature (sonora) needs 1.91
   LLVM_VERSION: "15.0.6"
   FLUTTER_VERSION: "3.24.5"
   VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
@@ -145,7 +145,7 @@ jobs:
 
       - name: Build ${{ env.APP_NAME }}
         run: |
-          python3 .\build.py --portable --flutter --skip-portable-pack --hwcodec --vram
+          python3 .\build.py --portable --flutter --skip-portable-pack --hwcodec --vram --echo-cancel
           mv ./flutter/build/windows/x64/runner/Release ./flydesk
           mv ./flydesk/rustdesk.exe ./flydesk/${{ env.APP_NAME }}.exe
 

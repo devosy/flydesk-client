@@ -35,7 +35,7 @@ permissions:
   contents: read
 
 env:
-  MAC_RUST_VERSION: "1.81"
+  MAC_RUST_VERSION: "1.91"  # fly3-rustdesk-voice: the echo-cancel feature (sonora) needs 1.91
   FLUTTER_MACOS_ARM_VERSION: "3.44.9"
   VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
   VCPKG_COMMIT_ID: "9e593bb18ea69cc5095e012465dcd675a822ed0d"
@@ -168,7 +168,7 @@ jobs:
           sed -i -e "s/osx_minimum_system_version = \"[0-9]*.[0-9]*\"/osx_minimum_system_version = \"${MIN_MACOS_VERSION}\"/" Cargo.toml
           sed -i -e "s/MACOSX_DEPLOYMENT_TARGET = [0-9]*.[0-9]*;/MACOSX_DEPLOYMENT_TARGET = ${MIN_MACOS_VERSION};/" flutter/macos/Runner.xcodeproj/project.pbxproj
           echo "MACOSX_DEPLOYMENT_TARGET=${MIN_MACOS_VERSION}" >> "$GITHUB_ENV"
-          ./build.py --flutter --hwcodec --unix-file-copy-paste --screencapturekit
+          ./build.py --flutter --hwcodec --unix-file-copy-paste --screencapturekit --echo-cancel
           ls -la "$APP_PATH/Contents/MacOS"
 
       - name: Ad-hoc sign the app

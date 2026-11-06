@@ -130,6 +130,11 @@ def make_parser():
         help='Enable feature vram, only available on windows now.'
     )
     parser.add_argument(
+        '--echo-cancel',
+        action='store_true',
+        help='Enable feature echo-cancel (AEC3 on the voice call; needs Rust 1.91).'
+    )
+    parser.add_argument(
         '--portable',
         action='store_true',
         help='Build windows portable'
@@ -318,6 +323,8 @@ def get_features(args):
         features.append('hwcodec')
     if args.vram:
         features.append('vram')
+    if args.echo_cancel:
+        features.append('echo-cancel')
     if args.flutter:
         features.append('flutter')
     if args.unix_file_copy_paste:

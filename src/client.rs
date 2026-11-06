@@ -2562,8 +2562,13 @@ impl AudioHandler {
         &mut self,
         config: &StreamConfig,
         device: &Device,
-    ) -> ResultType<()> {
+    ) -> ResultType<()>
+    where
+        f32: cpal::FromSample<T>,
+    {
         self.device_channel = config.channels;
+        #[cfg(feature = "echo-cancel")]
+        crate::echo_cancel::set_render_format(config.sample_rate.0, config.channels);
         #[cfg(target_os = "windows")]
         let err_fn = self.playback_recovery.new_error_callback();
         #[cfg(not(target_os = "windows"))]
@@ -2585,10 +2590,20 @@ impl AudioHandler {
         )?;
         let playback_status = playback_writer.status.clone();
         let timeout = None;
+        #[cfg(feature = "echo-cancel")]
+        let mut far_end: Vec<f32> = Vec::new();
         let stream = device.build_output_stream(
             config,
             move |data: &mut [T], _: &cpal::OutputCallbackInfo| {
                 playback_writer.write_output(data);
+                // fly3-rustdesk-voice: what was just written to the speaker is the far-end
+                // reference of the echo canceller (a bounded push, during a voice call only).
+                #[cfg(feature = "echo-cancel")]
+                if crate::echo_cancel::is_active() {
+                    far_end.clear();
+                    far_end.extend(data.iter().map(|s| f32::from_sample_(*s)));
+                    crate::echo_cancel::push_render(&far_end);
+                }
             },
             err_fn,
             timeout,

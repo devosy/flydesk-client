@@ -57,6 +57,8 @@ pub fn set_voice_call_input_device(device: Option<String>, set_if_present: bool)
         return;
     }
     *VOICE_CALL_INPUT_DEVICE.lock().unwrap() = device;
+    #[cfg(feature = "echo-cancel")]
+    crate::echo_cancel::set_active(VOICE_CALL_INPUT_DEVICE.lock().unwrap().is_some());
     restart();
 }
 
@@ -110,11 +112,12 @@ mod pa_impl {
         }
         #[cfg(target_os = "linux")]
         let mut stream = crate::ipc::connect(1000, "_pa").await?;
-        let mut encoder = AudioEncoder::new(Encoder::new(
+        let mut encoder = AudioEncoder::new(
+            Encoder::new(crate::platform::PA_SAMPLE_RATE, Stereo, LowDelay)?,
             crate::platform::PA_SAMPLE_RATE,
-            Stereo,
-            LowDelay,
-        )?);
+            2,
+            false,
+        );
         #[cfg(target_os = "linux")]
         allow_err!(
             stream
@@ -633,13 +636,20 @@ const MAX_AUDIO_ZERO_COUNT: u16 = 800;
 struct AudioEncoder {
     encoder: Encoder,
     zero_count: u16,
+    // fly3-rustdesk-voice: the packet format, for the echo canceller of the voice call.
+    sample_rate: u32,
+    channels: u16,
+    voice: bool,
 }
 
 impl AudioEncoder {
-    fn new(encoder: Encoder) -> Self {
+    fn new(encoder: Encoder, sample_rate: u32, channels: u16, voice: bool) -> Self {
         Self {
             encoder,
             zero_count: 0,
+            sample_rate,
+            channels,
+            voice,
         }
     }
 
@@ -666,6 +676,20 @@ fn send_f32(data: &[f32], encoder: &mut AudioEncoder, sp: &GenericService) {
     let data = if crate::flydesk_mic_muted() && get_voice_call_input_device().is_some() {
         silence = vec![0f32; data.len()];
         silence.as_slice()
+    } else {
+        data
+    };
+    // Voice call: the microphone packet goes through the echo canceller before Opus.
+    #[cfg(feature = "echo-cancel")]
+    let cancelled;
+    #[cfg(feature = "echo-cancel")]
+    let data = if encoder.voice && crate::echo_cancel::is_active() {
+        cancelled = {
+            let mut owned = data.to_vec();
+            crate::echo_cancel::process_capture(&mut owned, encoder.sample_rate, encoder.channels);
+            owned
+        };
+        cancelled.as_slice()
     } else {
         data
     };
