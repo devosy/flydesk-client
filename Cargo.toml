@@ -6,7 +6,7 @@ edition = "2021"
 build= "build.rs"
 description = "RustDesk Remote Desktop"
 default-run = "rustdesk"
-rust-version = "1.75"
+rust-version = "1.91"
 
 [lib]
 name = "librustdesk"
@@ -46,8 +46,9 @@ unix-file-copy-paste = [
     "clipboard/unix-file-copy-paste",
 ]
 screencapturekit = ["cpal/screencapturekit"]
-# fly3-rustdesk-voice: WebRTC AEC3 + noise suppression on the voice call (src/echo_cancel.rs);
-# needs Rust 1.91. Off by default; the FlyDesk / MskDesk workflows build with it.
+# fly3-rustdesk-voice: WebRTC AEC3 + noise suppression on the voice call (src/echo_cancel.rs).
+# Not in the default feature set; the FlyDesk / MskDesk workflows build with it. The dependency
+# graph (Cargo.lock) carries sonora's edition-2024 crates either way: Rust 1.91 is the minimum.
 echo-cancel = ["dep:sonora"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

@@ -491,15 +491,11 @@ mod cpal_impl {
         } else {
             48000
         };
-        // FlyDesk voice call: the microphone is sent mono (the pipeline rechannels a stereo input).
+        // FlyDesk voice call: the capture is the voice-call input (Voip encoder). The channel
+        // count stays the device's: the pipeline does not downmix 2 → 1 (audio_capture::rechannel
+        // folds > 2 channels to stereo only), so the encoder must match the packets it is given.
         let voice = crate::flydesk_build() && get_voice_call_input_device().is_some();
-        let ch = if voice {
-            Mono
-        } else if config.channels() > 1 {
-            Stereo
-        } else {
-            Mono
-        };
+        let ch = if config.channels() > 1 { Stereo } else { Mono };
         let max_channels = config.channels().max(ch as u16);
         let (_, max_packet_samples) = capture_packet_layout(sample_rate, max_channels)?;
         let encoder_config = audio_capture_queue::CaptureEncoderConfig {
