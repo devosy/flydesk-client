@@ -1,0 +1,31 @@
+# fly3-rustdesk-voice: resolves the dependencies that Cargo.toml adds and Cargo.lock does not
+# have yet (the builds run `cargo build --locked`), without a local toolchain. The updated
+# Cargo.lock is uploaded as an artifact; it is committed by hand after a look at the diff.
+name: FlyDesk lockfile
+
+on:
+  workflow_dispatch:
+
+jobs:
+  lockfile:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: "1.91"
+
+      - name: Resolve the missing packages only
+        run: |
+          cargo tree --depth 0 -e normal --features echo-cancel,flutter,hwcodec,unix-file-copy-paste > /dev/null
+          git --no-pager diff --stat Cargo.lock
+          git --no-pager diff Cargo.lock | grep '^[+-]name' || true
+
+      - name: Upload Cargo.lock
+        uses: actions/upload-artifact@v4
+        with:
+          name: Cargo.lock
+          path: Cargo.lock
