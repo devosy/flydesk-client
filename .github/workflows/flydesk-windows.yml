@@ -9,9 +9,19 @@ name: FlyDesk Windows build
 # (its public key). Left empty, the build points at a placeholder host. FLYDESK_API is the base
 # URL of the CRM that opens support sessions (e.g. https://crm.example.com); left empty, the app
 # cannot be linked to a chat session and works by ID only.
+#
+# msk-rustdesk: the `brand` input picks the client built from this code — FlyDesk (the checkout)
+# or MskDesk (MSK logo, Arabic by default, bundle id com.mskdesk.desktop, link scheme mskdesk://),
+# applied by res/brand.py before the build. Same server, key and CRM for both.
 
 on:
   workflow_dispatch:
+    inputs:
+      brand:
+        description: "Client brand"
+        type: choice
+        options: [flydesk, mskdesk]
+        default: flydesk
 
 permissions:
   contents: read
@@ -23,7 +33,10 @@ env:
   VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
   VCPKG_COMMIT_ID: "9e593bb18ea69cc5095e012465dcd675a822ed0d"
   VERSION: "1.5.1"
-  APP_EXE: "FlyDesk.exe"
+  BRAND: "${{ inputs.brand || 'flydesk' }}"
+  APP_NAME: "${{ inputs.brand == 'mskdesk' && 'MskDesk' || 'FlyDesk' }}"
+  FLYDESK_APP_NAME: "${{ inputs.brand == 'mskdesk' && 'MskDesk' || 'FlyDesk' }}"
+  FLYDESK_LANG: "${{ inputs.brand == 'mskdesk' && 'ar' || 'fr' }}"
   FLYDESK_SERVER: "${{ vars.FLYDESK_SERVER }}"
   FLYDESK_KEY: "${{ vars.FLYDESK_KEY }}"
   FLYDESK_API: "${{ vars.FLYDESK_API }}"
@@ -33,7 +46,7 @@ jobs:
     uses: ./.github/workflows/bridge.yml
 
   build-windows-x64:
-    name: FlyDesk x86_64-pc-windows-msvc
+    name: ${{ inputs.brand == 'mskdesk' && 'MskDesk' || 'FlyDesk' }} x86_64-pc-windows-msvc
     needs: [generate-bridge]
     runs-on: windows-2022
     env:
@@ -51,6 +64,11 @@ jobs:
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           submodules: recursive
+
+      - name: Apply the brand (name, bundle id, link scheme, icons, logo)
+        if: env.BRAND != 'flydesk'
+        shell: bash
+        run: python3 res/brand.py apply "$BRAND"
 
       - name: Restore bridge files
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -97,7 +115,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
-          prefix-key: flydesk-windows-2022
+          prefix-key: ${{ env.BRAND }}-windows-2022
 
       - name: Setup vcpkg with Github Actions binary cache
         uses: lukka/run-vcpkg@b1a0dd252f06b9e25b3c022a9a03bd7a427fb6a2 # v11
@@ -125,16 +143,16 @@ jobs:
           fi
         shell: bash
 
-      - name: Build FlyDesk
+      - name: Build ${{ env.APP_NAME }}
         run: |
           python3 .\build.py --portable --flutter --skip-portable-pack --hwcodec --vram
           mv ./flutter/build/windows/x64/runner/Release ./flydesk
-          mv ./flydesk/rustdesk.exe ./flydesk/${{ env.APP_EXE }}
+          mv ./flydesk/rustdesk.exe ./flydesk/${{ env.APP_NAME }}.exe
 
       - name: Upload app folder
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: flydesk-windows-x86_64-folder
+          name: ${{ env.BRAND }}-windows-x86_64-folder
           path: flydesk
           if-no-files-found: error
 
@@ -158,27 +176,27 @@ jobs:
           sed -i '/dpiAware/d' res/manifest.xml
           pushd ./libs/portable
           pip3 install -r requirements.txt
-          python3 ./generate.py -f ../../flydesk/ -o . -e ../../flydesk/${{ env.APP_EXE }}
+          python3 ./generate.py -f ../../flydesk/ -o . -e ../../flydesk/${{ env.APP_NAME }}.exe
           popd
           mkdir -p ./dist
-          mv ./target/release/rustdesk-portable-packer.exe ./dist/FlyDesk-${{ env.VERSION }}-x86_64.exe
+          mv ./target/release/rustdesk-portable-packer.exe ./dist/${{ env.APP_NAME }}-${{ env.VERSION }}-x86_64.exe
           sha256sum ./dist/*.exe
 
       - name: Upload self-extracted executable
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: flydesk-windows-x86_64-exe
+          name: ${{ env.BRAND }}-windows-x86_64-exe
           path: ./dist
           if-no-files-found: error
 
       - name: Smoke test (the built app starts and reports its version)
         shell: powershell
         run: |
-          $reportedVersion = (& ".\flydesk\${{ env.APP_EXE }}" --version | Out-String).Trim()
+          $reportedVersion = (& ".\flydesk\${{ env.APP_NAME }}.exe" --version | Out-String).Trim()
           if ($LASTEXITCODE -ne 0) {
-            throw "${{ env.APP_EXE }} --version exited with $LASTEXITCODE"
+            throw "${{ env.APP_NAME }}.exe --version exited with $LASTEXITCODE"
           }
           Write-Host "Reported version: '$reportedVersion'"
           if ($reportedVersion -cne $env:VERSION) {
-            throw "FlyDesk reports version '$reportedVersion', expected '$env:VERSION'"
+            throw "${{ env.APP_NAME }} reports version '$reportedVersion', expected '$env:VERSION'"
           }

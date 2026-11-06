@@ -2618,7 +2618,10 @@ pub fn read_custom_client(config: &str) {
 // FlyDesk: branding and server are compiled in instead of coming from a signed custom.txt.
 // FLYDESK_SERVER / FLYDESK_KEY / FLYDESK_API are read at build time (set by the flydesk-*.yml workflows);
 // without them the build points at a placeholder host so it never talks to a third-party server.
+// msk-rustdesk: the brand is a build variable too — FLYDESK_APP_NAME (FlyDesk, or MskDesk for the
+// MSK build made by res/brand.py) and FLYDESK_LANG, the language before the user picks one.
 const FLYDESK_APP_NAME: &str = "FlyDesk";
+const FLYDESK_DEFAULT_LANG: &str = "fr";
 const FLYDESK_PLACEHOLDER_SERVER: &str = "flydesk.invalid";
 const FLYDESK_API_OPTION: &str = "flydesk-api";
 // Time (ms since the epoch) until which incoming connections are allowed. The app's window
@@ -2696,15 +2699,16 @@ fn apply_flydesk_builtin() {
         if !api.is_empty() {
             overrides.insert(FLYDESK_API_OPTION.to_owned(), Value::String(api.to_owned()));
         }
-        // French unless the user picks another language in the settings ("Default" there
-        // means the language of the computer).
+        // The brand's language (French for FlyDesk, Arabic for MskDesk) unless the user picks
+        // another one in the settings ("Default" there means the language of the computer).
+        let lang = option_env!("FLYDESK_LANG").unwrap_or("").trim();
+        let lang = if lang.is_empty() { FLYDESK_DEFAULT_LANG } else { lang };
         let mut defaults = Map::new();
-        defaults.insert("lang".to_owned(), Value::String("fr".to_owned()));
+        defaults.insert("lang".to_owned(), Value::String(lang.to_owned()));
+        let app_name = option_env!("FLYDESK_APP_NAME").unwrap_or("").trim();
+        let app_name = if app_name.is_empty() { FLYDESK_APP_NAME } else { app_name };
         let mut data = HashMap::new();
-        data.insert(
-            "app-name".to_owned(),
-            Value::String(FLYDESK_APP_NAME.to_owned()),
-        );
+        data.insert("app-name".to_owned(), Value::String(app_name.to_owned()));
         data.insert("default-settings".to_owned(), Value::Object(defaults));
         data.insert("override-settings".to_owned(), Value::Object(overrides));
         apply_custom_client_data(data);
