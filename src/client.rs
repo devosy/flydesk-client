@@ -5244,7 +5244,9 @@ pub fn check_if_retry(msgtype: &str, title: &str, text: &str, retry_for_relay: b
                 && !text.to_lowercase().contains("manually")
                 && !text.to_lowercase().contains("restricted")
                 && !text.to_lowercase().contains("incoming only")
-                && !text.to_lowercase().contains("not allowed")))
+                && !text.to_lowercase().contains("not allowed")
+                // FlyDesk: the support session ended on the other computer.
+                && !text.contains("flydesk-session-not-active")))
 }
 
 #[cfg(test)]
@@ -5257,6 +5259,16 @@ mod retry_tests {
             "error",
             "Connection Error",
             "Incoming only mode",
+            false,
+        ));
+    }
+
+    #[test]
+    fn flydesk_session_end_is_not_retryable() {
+        assert!(!check_if_retry(
+            "error",
+            "Connection Error",
+            "flydesk-session-not-active",
             false,
         ));
     }

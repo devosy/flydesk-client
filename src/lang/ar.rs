@@ -825,7 +825,16 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Renew trust", "تجديد الثقة"),
         ("install-directory-not-empty-tip", "المجلد المحدد ليس فارغًا. قد يؤدي التثبيت إلى حذف البيانات الموجودة. يُنصح باختيار مجلد آخر."),
         ("Request approval", "طلب الموافقة"),
-        ("flydesk-session-ready", "يمكن للدعم الاتصال الآن. انقر على «قبول» عند ظهور الطلب."),
         ("flydesk-session-failed", "جلسة الدعم هذه لم تعد صالحة. ارجع إلى المحادثة وابدأ من جديد."),
+        ("flydesk-session-not-active", "لا توجد جلسة دعم نشطة على هذا الحاسوب. اطلب جلسة جديدة من المحادثة."),
+        ("flydesk-panel-idle", "لا توجد جلسة دعم جارية."),
+        ("flydesk-panel-idle-tip", "للحصول على المساعدة، افتح محادثة الدعم واقبل طلب المساعدة عن بُعد: تبدأ الجلسة تلقائيًا."),
+        ("flydesk-panel-starting", "جارٍ بدء الجلسة..."),
+        ("flydesk-panel-waiting", "الجلسة نشطة. في انتظار الدعم..."),
+        ("flydesk-panel-control", "يرى الدعم شاشتك ويمكنه استخدام لوحة المفاتيح والفأرة."),
+        ("flydesk-panel-view", "يرى الدعم شاشتك (عرض فقط)."),
+        ("flydesk-panel-chat-tip", "يمكنك السماح بالتحكم أو سحبه من المحادثة. إغلاق هذه النافذة يوقف الجلسة."),
+        ("flydesk-panel-ended", "انتهت الجلسة."),
+        ("flydesk-panel-stop", "إيقاف الجلسة"),
     ].iter().cloned().collect();
 }

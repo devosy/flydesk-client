@@ -371,6 +371,9 @@ class ChatModel with ChangeNotifier {
     }
     if (text.isEmpty) return;
     if (desktopType == DesktopType.cm) {
+      // FlyDesk: the connection window never shows (ServerModel.hideCm), so a text chat
+      // (older agent builds still offer it) is dropped instead of raising the window.
+      if (session.serverModel.hideCm) return;
       await showCmWindow();
     }
     String? peerId;

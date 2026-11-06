@@ -825,7 +825,16 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Renew trust", "Renouveler la confiance"),
         ("install-directory-not-empty-tip", "Le dossier sélectionné n’est pas vide. L’installation peut supprimer des données existantes. Envisagez de choisir un autre dossier."),
         ("Request approval", "Demander l'approbation"),
-        ("flydesk-session-ready", "Le support peut maintenant se connecter. Cliquez sur « Accepter » à l'apparition de la demande."),
         ("flydesk-session-failed", "Cette session d'assistance n'est plus valide. Retournez dans le chat et recommencez."),
+        ("flydesk-session-not-active", "Aucune session d'assistance n'est active sur ce poste. Demandez une nouvelle session depuis le chat."),
+        ("flydesk-panel-idle", "Aucune session d'assistance en cours."),
+        ("flydesk-panel-idle-tip", "Pour être aidé, ouvrez le chat du support et acceptez la demande d'assistance à distance : la session démarre toute seule."),
+        ("flydesk-panel-starting", "Démarrage de la session..."),
+        ("flydesk-panel-waiting", "Session active. En attente du support..."),
+        ("flydesk-panel-control", "Le support voit votre écran et peut utiliser le clavier et la souris."),
+        ("flydesk-panel-view", "Le support voit votre écran (affichage seul)."),
+        ("flydesk-panel-chat-tip", "Vous pouvez autoriser ou retirer le contrôle depuis le chat. Fermer cette fenêtre arrête la session."),
+        ("flydesk-panel-ended", "Session terminée."),
+        ("flydesk-panel-stop", "Arrêter la session"),
     ].iter().cloned().collect();
 }

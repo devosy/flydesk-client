@@ -2620,6 +2620,34 @@ pub fn read_custom_client(config: &str) {
 // without them the build points at a placeholder host so it never talks to a third-party server.
 const FLYDESK_APP_NAME: &str = "FlyDesk";
 const FLYDESK_PLACEHOLDER_SERVER: &str = "flydesk.invalid";
+const FLYDESK_API_OPTION: &str = "flydesk-api";
+// Time (ms since the epoch) until which incoming connections are allowed. The app's window
+// writes it again every few seconds while a support session is active in the CRM chat, and
+// clears it when the session ends: no window or no session means no connection.
+const FLYDESK_LIVE_OPTION: &str = "flydesk-live";
+
+/// FlyDesk: true while the app's window keeps a support session alive. A build without a CRM
+/// address has no such sessions and is not restricted.
+pub fn flydesk_session_live() -> bool {
+    if get_builtin_option(FLYDESK_API_OPTION).is_empty() {
+        return true;
+    }
+    Config::get_option(FLYDESK_LIVE_OPTION)
+        .parse::<i64>()
+        .map_or(false, |until| until > hbb_common::get_time())
+}
+
+/// FlyDesk: true in a build made for a CRM (sessions come from the chat only).
+pub fn flydesk_build() -> bool {
+    !get_builtin_option(FLYDESK_API_OPTION).is_empty()
+}
+
+/// FlyDesk: the customer chose « view only » in the CRM chat (the app's window writes the
+/// choice to the standard `enable-keyboard` option).
+pub fn flydesk_view_only() -> bool {
+    !get_builtin_option(FLYDESK_API_OPTION).is_empty()
+        && Config::get_option(keys::OPTION_ENABLE_KEYBOARD) == "N"
+}
 
 fn apply_flydesk_builtin() {
     static ONCE: std::sync::Once = std::sync::Once::new();
@@ -2643,12 +2671,30 @@ fn apply_flydesk_builtin() {
             "hide-powered-by-me".to_owned(),
             Value::String("Y".to_owned()),
         );
-        // An incoming session is accepted by a click in the app; no password is ever asked.
-        overrides.insert("approve-mode".to_owned(), Value::String("click".to_owned()));
+        // The customer accepts in the CRM chat. The app then lets the agent of that session in
+        // with its one-time password, which it hands to the CRM for that session only: no ID,
+        // no password and no approval window are ever shown (flutter/lib/common/flydesk.dart).
+        for (k, v) in [
+            ("approve-mode", "password"),
+            ("verification-method", "use-temporary-password"),
+            ("temporary-password-length", "10"),
+            ("allow-numeric-one-time-password", "N"),
+            // With no approval window, the agent gets the screen session the customer accepted
+            // and nothing wider: nothing hidden from the customer (blocked input, blanked
+            // screen, a command line the customer cannot see), no webcam, no tunnel into the
+            // customer's network.
+            ("enable-block-input", "N"),
+            ("enable-privacy-mode", "N"),
+            ("enable-terminal", "N"),
+            ("enable-camera", "N"),
+            ("enable-tunnel", "N"),
+        ] {
+            overrides.insert(k.to_owned(), Value::String(v.to_owned()));
+        }
         // Base URL of the CRM that opens support sessions (read by flutter/lib/common/flydesk.dart).
         let api = option_env!("FLYDESK_API").unwrap_or("").trim();
         if !api.is_empty() {
-            overrides.insert("flydesk-api".to_owned(), Value::String(api.to_owned()));
+            overrides.insert(FLYDESK_API_OPTION.to_owned(), Value::String(api.to_owned()));
         }
         // French unless the user picks another language in the settings ("Default" there
         // means the language of the computer).

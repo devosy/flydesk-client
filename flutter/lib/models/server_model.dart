@@ -11,6 +11,7 @@ import 'package:get/get.dart';
 import 'package:window_manager/window_manager.dart';
 
 import '../common.dart';
+import '../common/flydesk.dart';
 import '../common/formatter/id_formatter.dart';
 import '../desktop/pages/server_page.dart' as desktop;
 import '../desktop/widgets/tabbar_widget.dart';
@@ -175,6 +176,7 @@ class ServerModel with ChangeNotifier {
             if (!hideCm) showCmWindow();
           }
         }
+        await _flydeskEnforce();
       }
 
       updatePasswordModel();
@@ -194,6 +196,57 @@ class ServerModel with ChangeNotifier {
     // Initial keyboard status is off on mobile
     if (isMobile) {
       bind.mainSetOption(key: kOptionEnableKeyboard, value: 'N');
+    }
+  }
+
+  // FlyDesk: this (hidden) connection window applies to the open connections what the main
+  // window learned from the CRM chat (common/flydesk.dart):
+  //   - no active session any more (or no main window): every connection is closed;
+  //   - « view only »: no keyboard, mouse, clipboard, files or restart, and only screen
+  //     connections;
+  //   - « control »: they are given back.
+  // The engine cuts and restricts by itself as well (src/server/connection.rs); this is the
+  // faster path.
+  Future<void> _flydeskEnforce() async {
+    if (!flydeskEnabled()) return;
+    try {
+      // Nothing is known before the engine options were read once.
+      if (!await bind.optionSynced()) return;
+      final live =
+          flydeskLive(await bind.mainGetOption(key: kFlydeskLiveOption));
+      final control =
+          await bind.mainGetOption(key: kOptionEnableKeyboard) != 'N';
+      for (final client in _clients.toList()) {
+        if (client.disconnected || !client.authorized) continue;
+        final screen = client.type_() == ClientType.remote;
+        if (!live || (!control && !screen)) {
+          bind.cmCloseConnection(connId: client.id);
+          continue;
+        }
+        if (!screen) continue;
+        if (client.keyboard != control) {
+          bind.cmSwitchPermission(
+              connId: client.id, name: "keyboard", enabled: control);
+          client.keyboard = control;
+        }
+        if (client.clipboard != control) {
+          bind.cmSwitchPermission(
+              connId: client.id, name: "clipboard", enabled: control);
+          client.clipboard = control;
+        }
+        if (client.file != control) {
+          bind.cmSwitchPermission(
+              connId: client.id, name: "file", enabled: control);
+          client.file = control;
+        }
+        if (client.restart != control) {
+          bind.cmSwitchPermission(
+              connId: client.id, name: "restart", enabled: control);
+          client.restart = control;
+        }
+      }
+    } catch (e) {
+      debugPrint("flydesk: enforcing the session failed: $e");
     }
   }
 
@@ -764,6 +817,9 @@ class ServerModel with ChangeNotifier {
         if (client.incomingVoiceCall) {
           if (isAndroid) {
             showVoiceCallDialog(client);
+          } else if (hideCm) {
+            // FlyDesk: nobody can answer in a window that never shows.
+            bind.cmHandleIncomingVoiceCall(id: client.id, accept: false);
           } else {
             // Has incoming phone call, let's set the window on top.
             Future.delayed(Duration.zero, () {

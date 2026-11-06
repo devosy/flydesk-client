@@ -292,7 +292,16 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("api_server_empty_tip", "With API Server empty, your custom server defaults to HTTP. Contact your administrator to enable HTTPS."),
         ("android-logs-folder-tip", "Choose Android → media to store log files."),
         ("install-directory-not-empty-tip", "The selected folder is not empty. Installation may delete existing data. Consider choosing a different folder."),
-        ("flydesk-session-ready", "Support can now connect. Click \"Accept\" when the request appears."),
         ("flydesk-session-failed", "This support session is no longer valid. Go back to the chat and start again."),
+        ("flydesk-session-not-active", "No support session is active on this computer. Ask for a new session from the chat."),
+        ("flydesk-panel-idle", "No support session in progress."),
+        ("flydesk-panel-idle-tip", "To get help, open the support chat and accept the remote assistance request: the session starts by itself."),
+        ("flydesk-panel-starting", "Starting the session..."),
+        ("flydesk-panel-waiting", "Session active. Waiting for support..."),
+        ("flydesk-panel-control", "Support sees your screen and can use the keyboard and mouse."),
+        ("flydesk-panel-view", "Support sees your screen (view only)."),
+        ("flydesk-panel-chat-tip", "You can allow or withdraw control from the chat. Closing this window stops the session."),
+        ("flydesk-panel-ended", "Session ended."),
+        ("flydesk-panel-stop", "Stop the session"),
     ].iter().cloned().collect();
 }

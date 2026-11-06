@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_hbb/common.dart';
+import 'package:flutter_hbb/common/flydesk.dart';
 import 'package:flutter_hbb/consts.dart';
 import 'package:flutter_hbb/desktop/pages/desktop_home_page.dart';
 import 'package:flutter_hbb/desktop/pages/desktop_setting_page.dart';
@@ -97,7 +98,10 @@ class _DesktopTabPageState extends State<DesktopTabPage> {
             body: DesktopTab(
               controller: tabController,
               tail: Offstage(
-                offstage: bind.isIncomingOnly() || bind.isDisableSettings(),
+                // FlyDesk: the window is the session panel only, there is nothing to set up.
+                offstage: bind.isIncomingOnly() ||
+                    bind.isDisableSettings() ||
+                    flydeskEnabled(),
                 child: ActionIcon(
                   message: 'Settings',
                   icon: IconFont.menu,

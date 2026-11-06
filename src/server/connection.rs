@@ -1173,6 +1173,21 @@ impl Connection {
                     #[cfg(windows)]
                     conn.portable_check();
                     raii::AuthedConnID::check_wake_lock_on_setting_changed();
+                    // FlyDesk: the support session ended in the CRM chat, or the app's window
+                    // is gone. The hidden connection window normally closes the connection
+                    // first; this is the engine's own guarantee, and it also forgets the
+                    // password this session remembers.
+                    if conn.authorized && !crate::common::flydesk_session_live() {
+                        conn.send_close_reason_no_retry("flydesk-session-not-active").await;
+                        conn.on_close("flydesk session ended", true).await;
+                        break;
+                    }
+                    // FlyDesk « view only »: no keyboard or mouse, whatever the connection
+                    // window did or did not do. Control is given back by that window.
+                    if conn.authorized && conn.keyboard && crate::common::flydesk_view_only() {
+                        conn.keyboard = false;
+                        conn.send_permission(Permission::Keyboard, false).await;
+                    }
                     if let Some((instant, minute)) = conn.auto_disconnect_timer.as_ref() {
                         if instant.elapsed().as_secs() > minute * 60 {
                             conn.send_close_reason_no_retry("Connection failed due to inactivity").await;
@@ -2925,6 +2940,14 @@ impl Connection {
             if !self.check_id_whitelist().await {
                 return false;
             }
+            // FlyDesk: nobody is let in unless the app's own window reports a support session
+            // that is still active in the CRM chat (see `flydesk_session_live`). This also
+            // refuses the password a previous session still remembers.
+            if !crate::common::flydesk_session_live() {
+                self.send_login_error("flydesk-session-not-active").await;
+                sleep(1.).await;
+                return false;
+            }
             match lr.union {
                 Some(login_request::Union::FileTransfer(ft)) => {
                     if !Self::permission(
@@ -3999,7 +4022,10 @@ impl Connection {
                     #[cfg(feature = "flutter")]
                     #[cfg(not(any(target_os = "android", target_os = "ios")))]
                     Some(misc::Union::SwitchSidesRequest(s)) => {
-                        if let Ok(uuid) = uuid::Uuid::from_slice(&s.uuid.to_vec()[..]) {
+                        // FlyDesk: never — it would open a remote window on this computer
+                        // (the menu is gone from current builds; an older one may still ask).
+                        if crate::common::flydesk_build() {
+                        } else if let Ok(uuid) = uuid::Uuid::from_slice(&s.uuid.to_vec()[..]) {
                             if crate::server::insert_pending_switch_sides_uuid(
                                 self.lr.my_id.clone(),
                                 uuid.clone(),

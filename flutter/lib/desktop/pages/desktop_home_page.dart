@@ -59,6 +59,9 @@ class _DesktopHomePageState extends State<DesktopHomePage>
   @override
   Widget build(BuildContext context) {
     super.build(context);
+    if (flydeskEnabled()) {
+      return _buildBlock(child: buildFlydeskPanel(context));
+    }
     final isIncomingOnly = bind.isIncomingOnly();
     return _buildBlock(
         child: Row(
@@ -74,6 +77,110 @@ class _DesktopHomePageState extends State<DesktopHomePage>
   Widget _buildBlock({required Widget child}) {
     return buildRemoteBlock(
         block: _block, mask: true, use: canBeBlocked, child: child);
+  }
+
+  // FlyDesk: the whole main window. No ID, no password, no address book: a support session is
+  // opened, accepted and steered from the CRM chat. This panel only says what is going on and
+  // lets the user stop it (common/flydesk.dart).
+  Widget buildFlydeskPanel(BuildContext context) {
+    return Container(
+      color: Theme.of(context).colorScheme.background,
+      alignment: Alignment.topCenter,
+      child: SingleChildScrollView(
+        controller: _leftPaneScrollController,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 440),
+          child: Column(
+            key: _childKey,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              const SizedBox(height: 28),
+              loadLogo(),
+              const SizedBox(height: 22),
+              Obx(() => _buildFlydeskStatus(context)),
+              Obx(() => buildHelpCards(stateGlobal.updateUrl.value)),
+              const SizedBox(height: 16),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFlydeskStatus(BuildContext context) {
+    final phase = flydeskPhase.value;
+    final connected = flydeskConnected.value;
+    final control = flydeskControl.value;
+    final active = phase == FlydeskPhase.active;
+    String title;
+    String? detail;
+    IconData icon;
+    Color color;
+    if (active && connected) {
+      title = control ? 'flydesk-panel-control' : 'flydesk-panel-view';
+      detail = 'flydesk-panel-chat-tip';
+      icon = Icons.visibility;
+      color = Colors.green;
+    } else if (active) {
+      title = 'flydesk-panel-waiting';
+      detail = 'flydesk-panel-chat-tip';
+      icon = Icons.hourglass_top;
+      color = MyTheme.accent;
+    } else if (phase == FlydeskPhase.starting) {
+      title = 'flydesk-panel-starting';
+      icon = Icons.sync;
+      color = MyTheme.accent;
+    } else if (phase == FlydeskPhase.ended) {
+      title = 'flydesk-panel-ended';
+      detail = 'flydesk-panel-idle-tip';
+      icon = Icons.check_circle_outline;
+      color = Colors.grey;
+    } else if (phase == FlydeskPhase.failed) {
+      title = 'flydesk-session-failed';
+      icon = Icons.error_outline;
+      color = Colors.redAccent;
+    } else {
+      title = 'flydesk-panel-idle';
+      detail = 'flydesk-panel-idle-tip';
+      icon = Icons.desktop_windows_outlined;
+      color = Colors.grey;
+    }
+    final textTheme = Theme.of(context).textTheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Icon(icon, color: color, size: 34),
+          const SizedBox(height: 10),
+          Text(
+            translate(title),
+            textAlign: TextAlign.center,
+            style: textTheme.titleMedium,
+          ),
+          if (detail != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              translate(detail),
+              textAlign: TextAlign.center,
+              style: textTheme.bodySmall,
+            ),
+          ],
+          if (active || phase == FlydeskPhase.starting) ...[
+            const SizedBox(height: 18),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.redAccent,
+                foregroundColor: Colors.white,
+              ),
+              icon: const Icon(Icons.stop_circle_outlined, size: 18),
+              label: Text(translate('flydesk-panel-stop')),
+              onPressed: () => flydeskStop(),
+            ),
+          ],
+        ],
+      ),
+    );
   }
 
   Widget buildLeftPane(BuildContext context) {
@@ -461,6 +568,11 @@ class _DesktopHomePageState extends State<DesktopHomePage>
 
     if (isWindows && !bind.isDisableInstallation()) {
       if (!bind.mainIsInstalled()) {
+        // FlyDesk: not offered around a session — installing quits this app at once, which
+        // would drop the session without telling the chat.
+        if (flydeskEnabled() && flydeskPhase.value != FlydeskPhase.idle) {
+          return Container();
+        }
         return buildInstallCard(
             "", bind.isOutgoingOnly() ? "" : "install_tip", "Install",
             () async {
@@ -583,6 +695,11 @@ class _DesktopHomePageState extends State<DesktopHomePage>
       String? link,
       bool? closeButton,
       String? closeOption}) {
+    // FlyDesk: no link to the pages of the project the app is built from.
+    if (flydeskEnabled()) {
+      help = null;
+      link = null;
+    }
     if (bind.mainGetBuildinOption(key: kOptionHideHelpCards) == 'Y' &&
         content != 'install_daemon_tip') {
       return const SizedBox();
