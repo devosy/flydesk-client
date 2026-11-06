@@ -112,7 +112,10 @@ def apply(brand):
         with open(rel, "w", encoding="utf-8") as f:
             f.write(new)
     for rel in ICON_FILES:
-        shutil.copyfile(os.path.join(brand_dir(brand), "icons", rel), rel)
+        src = os.path.join(brand_dir(brand), "icons", rel)
+        if not os.path.isfile(src):
+            sys.exit(f"{src}: missing (the brand's images are force-added, .gitignore ignores *png)")
+        shutil.copyfile(src, rel)
     shutil.copyfile(os.path.join(brand_dir(brand), "logo.png"), "flutter/assets/logo.png")
     print(f"{target['name']} applied ({len(TEXT_FILES)} files rewritten, {len(ICON_FILES) + 1} images copied)")
 
