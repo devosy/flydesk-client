@@ -479,6 +479,11 @@ void _flydeskQuitSoon(Duration delay) {
   _flydeskQuitTimer = Timer(delay, attempt);
 }
 
+/// The window of a process that served a session was closed: it quits now, through the same
+/// guarded path as the end of a session (a new link that arrives meanwhile is served, the CRM
+/// gets its bounded time to hear about the end).
+void flydeskQuitWhenDone() => _flydeskQuitSoon(Duration.zero);
+
 /// Ends this process (and its engine): the next session starts a fresh one.
 void flydeskQuit() {
   debugPrint('flydesk: session over, quitting this process');

@@ -488,8 +488,9 @@ class _DesktopTabState extends State<DesktopTab>
       // FlyDesk: one process per session — a process that served one quits instead of
       // staying hidden, so the next session never reuses its engine (common/flydesk.dart).
       if (tabType == DesktopTabType.main && flydeskServed()) {
-        await windowManager.hide();
-        flydeskQuit();
+        // A link that arrived while the window was closing is served: the window stays.
+        if (flydeskSessionOpen()) return;
+        flydeskQuitWhenDone();
       }
       if (rustDeskWinManager.getActiveWindows().contains(kMainWindowId)) {
         await rustDeskWinManager.unregisterActiveWindow(kMainWindowId);
