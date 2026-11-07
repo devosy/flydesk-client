@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' as io;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_hbb/common.dart';
@@ -30,6 +31,12 @@ import 'package:get/get.dart';
 //   4. sends the password again whenever the engine replaces it (it does as soon as it has let
 //      somebody in).
 // « Stop » in this window, or closing it, ends the session.
+//
+// One process per session: a process that attached a session quits when that session ends
+// (and when its window is closed), so the next session always starts a fresh engine. Seen in
+// production: a process kept hidden after a session (closing the main window only hides it)
+// served the next sessions with an engine left in a bad state by a session ended during a
+// voice call — it refused every agent login while this window still saw the old connection.
 
 const String _kFlydeskApiOption = 'flydesk-api';
 const String _kFlydeskAttachPath = '/api/public/flydesk/attach';
@@ -158,6 +165,18 @@ bool _flydeskFollowing = false;
 bool _flydeskOnline = false;
 // Whether the engine options were put back to « no session » since this window started.
 bool _flydeskReset = false;
+// This process attached (or tried to attach) a session: it serves no other one and quits when
+// the session is over.
+bool _flydeskServed = false;
+Timer? _flydeskQuitTimer;
+// How long the window shows « Session terminée » before the process quits.
+const Duration _kFlydeskQuitDelay = Duration(seconds: 3);
+// Longest wait for the CRM to be told about a Stop before the process quits anyway.
+const Duration _kFlydeskStopTellTimeout = Duration(seconds: 8);
+// After a failed start the message stays readable (its toast lasts 10 s) before the process quits.
+const Duration _kFlydeskFailedQuitDelay = Duration(seconds: 11);
+// Requests telling the CRM that a session ended, still running.
+int _flydeskTellingEnd = 0;
 // When the last tick ran (ms since the epoch).
 int _flydeskLastTickAt = 0;
 // The engine keeps HTTP answers by address: each request gets its own, so that two requests
@@ -226,6 +245,10 @@ void flydeskInit() {
 /// network is not ready. A newer token replaces one that is still being sent.
 Future<void> flydeskAttach(String token) async {
   _flydeskPendingToken = token;
+  _flydeskServed = true;
+  // A link that reaches this process while it waits to quit is served here rather than lost.
+  _flydeskQuitTimer?.cancel();
+  _flydeskQuitTimer = null;
   if (_flydeskAttaching) return;
   _flydeskAttaching = true;
   if (_flydeskSession == null) flydeskPhase.value = FlydeskPhase.starting;
@@ -248,6 +271,7 @@ Future<void> flydeskAttach(String token) async {
           await _flydeskStarted(current);
         } else if (_flydeskSession == null) {
           flydeskPhase.value = FlydeskPhase.failed;
+          _flydeskQuitSoon(_kFlydeskFailedQuitDelay);
         }
         _flydeskNotify(result == _FlydeskAttachResult.done);
         break;
@@ -255,7 +279,10 @@ Future<void> flydeskAttach(String token) async {
       attempt++;
       if (attempt >= _kFlydeskMaxAttempts) {
         _flydeskPendingToken = null;
-        if (_flydeskSession == null) flydeskPhase.value = FlydeskPhase.failed;
+        if (_flydeskSession == null) {
+          flydeskPhase.value = FlydeskPhase.failed;
+          _flydeskQuitSoon(_kFlydeskFailedQuitDelay);
+        }
         _flydeskNotify(false);
         break;
       }
@@ -281,7 +308,9 @@ Future<void> flydeskStop() async {
   _flydeskPendingToken = null;
   if (token == null) return;
   await _flydeskFinish(FlydeskPhase.ended);
-  await _flydeskTellEnd(token);
+  try {
+    await _flydeskTellEnd(token).timeout(_kFlydeskStopTellTimeout);
+  } catch (_) {}
 }
 
 /// The main window is being closed: a session never goes on behind a window the user closed.
@@ -297,13 +326,19 @@ Future<void> flydeskOnMainWindowClosed() async {
 
 // Tells the CRM that the session of [token] is over, so both chat cards follow.
 Future<void> _flydeskTellEnd(String token) async {
-  for (var i = 0; i < 3; i++) {
-    final status = await _flydeskPostStatus(_kFlydeskEndPath, {'token': token});
-    // Answered (ended now, or already ended): done. No answer or a busy server: once more.
-    if (status != null && status < 500 && status != 429) return;
-    await Future.delayed(const Duration(seconds: 2));
+  _flydeskTellingEnd++;
+  try {
+    for (var i = 0; i < 3; i++) {
+      final status =
+          await _flydeskPostStatus(_kFlydeskEndPath, {'token': token});
+      // Answered (ended now, or already ended): done. No answer or a busy server: once more.
+      if (status != null && status < 500 && status != 429) return;
+      await Future.delayed(const Duration(seconds: 2));
+    }
+    debugPrint('flydesk: the CRM could not be told that the session was stopped');
+  } finally {
+    _flydeskTellingEnd--;
   }
-  debugPrint('flydesk: the CRM could not be told that the session was stopped');
 }
 
 Future<_FlydeskAttachResult> _flydeskAttachOnce(String token, int attempt) async {
@@ -415,6 +450,39 @@ Future<void> _flydeskFinish(FlydeskPhase phase) async {
   flydeskSpeakerOn.value = true;
   _flydeskVoiceTold = null;
   await _flydeskCloseEngine();
+  if (phase == FlydeskPhase.ended) _flydeskQuitSoon(_kFlydeskQuitDelay);
+}
+
+/// This process attached a session: it serves no other one (see the top of this file).
+bool flydeskServed() => _flydeskServed;
+
+// The session of this process is over: the process quits after [delay], unless a new link
+// arrived meanwhile (then it is served here). Waits, within a bound, for the CRM to be told.
+void _flydeskQuitSoon(Duration delay) {
+  if (!_flydeskServed) return;
+  _flydeskQuitTimer?.cancel();
+  final deadline = _flydeskNow() + delay.inMilliseconds +
+      _kFlydeskStopTellTimeout.inMilliseconds;
+  void attempt() {
+    _flydeskQuitTimer = null;
+    // A new link arrived: it is served by this process.
+    if (flydeskSessionOpen()) return;
+    // A Stop during the start leaves the attach loop running a moment; the CRM may still be
+    // being told: wait for both, within the bound.
+    if ((_flydeskAttaching || _flydeskTellingEnd > 0) && _flydeskNow() < deadline) {
+      _flydeskQuitTimer = Timer(const Duration(milliseconds: 500), attempt);
+      return;
+    }
+    flydeskQuit();
+  }
+
+  _flydeskQuitTimer = Timer(delay, attempt);
+}
+
+/// Ends this process (and its engine): the next session starts a fresh one.
+void flydeskQuit() {
+  debugPrint('flydesk: session over, quitting this process');
+  io.exit(0);
 }
 
 // The engine refuses every login and cuts what is open (the hidden connection window does it
